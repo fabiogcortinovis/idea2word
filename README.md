@@ -1,4 +1,4 @@
-# ComponiViste
+# idea2word
 
 Compone in **proiezione ortogonale** le quattro viste del nodo contenute nel PDF di verifica di **IDEA StatiCa Connection** (vista 3D, pianta Z, vista Y, vista X).
 
