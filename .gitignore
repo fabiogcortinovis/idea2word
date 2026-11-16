@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+ComponiViste_errori.log
+_OLD/
+*.png
+*.pdf
