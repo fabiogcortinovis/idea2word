@@ -10,7 +10,7 @@ Compone in **proiezione ortogonale** le quattro viste del nodo contenute nel PDF
 - Esporta in **PNG** oppure inserisce l'immagine in **Word** nella posizione del cursore (Windows, Word aperto).
 
 ## Uso
-1. Doppio click su `ComponiViste.pyw` (serve Python 3 installato; al primo avvio installa da solo le librerie).
+1. Doppio click su `idea2word.pyw` (serve Python 3 installato; al primo avvio installa da solo le librerie).
 2. **Apri PDF** → anteprima.
 3. Regola scala / offset delle viste o usa **Calibra con 2 punti**.
 4. **Esporta PNG** oppure **Inserisci in Word (cursore)**.
