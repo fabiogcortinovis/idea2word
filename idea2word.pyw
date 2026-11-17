@@ -269,6 +269,9 @@ PEN_SEAM_TAB = 0.30    # costo di un taglio dove la tabella continua tra pagine
 PAGE_COST = 0.25       # costo fisso per ogni pagina (evita pagine inutili)
 WASTE_W = 1.0          # peso dello spazio vuoto a fondo pagina
 IMG_NOBREAK = 150      # le immagini raster >= 150 px non vengono mai tagliate
+CAP_GAP = 14.0         # [pt] distanza max tra immagine e didascalia (sotto)
+CAP_NLINES = 2         # righe massime di didascalia incluse nell'immagine
+PAIR_GAP = 14.0        # [pt] spazio tra le due immagini accoppiate
 
 
 class PdfDoc:
@@ -366,19 +369,56 @@ def _grid_lines(g, a, b, wpx):
     return lines
 
 
+def trim_rect(doc, page, rect, dpi=150):
+    """Stringe il rettangolo sul contenuto non bianco (bounding box perfetta)."""
+    import numpy as np
+    g = np.array(doc.render(page, rect, dpi, gray=True), dtype=np.uint8)
+    m = g < NOWHITE
+    rows, cols = np.flatnonzero(m.any(axis=1)), np.flatnonzero(m.any(axis=0))
+    if not rows.size or not cols.size:
+        return tuple(rect)
+    S = 72.0 / dpi
+    return (rect[0] + cols[0] * S - 0.5, rect[1] + rows[0] * S - 0.5,
+            rect[0] + (cols[-1] + 1) * S + 0.5, rect[1] + (rows[-1] + 1) * S + 0.5)
+
+
+def with_caption(doc, page, r, ybottom):
+    """Allunga il rettangolo dell'immagine verso il basso fino a includere la
+    didascalia (righe di testo subito sotto, sovrapposte in orizzontale)."""
+    x0, y0, x1, y1 = r
+    lines = {}
+    for (a, b, c, d, t, bl, ln) in doc.words(page):
+        if b < y1 - 2 or b > ybottom or c < x0 - 2 or a > x1 + 2:
+            continue
+        lines.setdefault((bl, ln), []).append((a, b, c, d))
+    ls = sorted((min(w[1] for w in ws), max(w[3] for w in ws),
+                 min(w[0] for w in ws), max(w[2] for w in ws)) for ws in lines.values())
+    bottom, gmax, n = y1, CAP_GAP, 0
+    for top, bot, lx0, lx1 in ls:
+        if top - bottom > gmax or n >= CAP_NLINES:
+            break
+        bottom = max(bottom, bot + 1)
+        x0, x1 = min(x0, lx0), max(x1, lx1)
+        gmax, n = 6.0, n + 1
+    return (x0, y0, x1, bottom)
+
+
 def find_report_layout(doc):
     """Per ogni pagina: zona utile (senza intestazione e numero di pagina) e
     rettangoli da escludere (le prime 4 viste con le loro didascalie)."""
-    excl, found = {}, 0
+    excl, found, special = {}, 0, []
     for i in range(doc.n):
         for (x0, y0, x1, y1, w, h) in doc.images(i):
             if w < MIN_IMG or h < MIN_IMG:
                 continue
-            excl.setdefault(i, []).append((x0 - 1, y0 - 1, x1 + 1, y1 + 1))
             found += 1
-            if found == 4:
+            if found <= 4:                       # le 4 viste (schermata 1)
+                excl.setdefault(i, []).append((x0 - 1, y0 - 1, x1 + 1, y1 + 1))
+            else:                                # immagini 5, 6, 7: trattate a parte
+                special.append((i, (x0, y0, x1, y1)))
+            if found == 7:
                 break
-        if found == 4:
+        if found == 7:
             break
     for i in list(excl):
         lines = {}
@@ -406,7 +446,12 @@ def find_report_layout(doc):
                     top = w[1] - 2
                     break
         bounds.append((top, bottom))
-    return {"bounds": bounds, "excl": excl}
+    sp = []
+    for (i, r) in special:
+        tr = trim_rect(doc, i, with_caption(doc, i, r, bounds[i][1]))
+        sp.append({"page": i, "rect": tr})
+        excl.setdefault(i, []).append((tr[0] - 2, tr[1] - 2, tr[2] + 2, tr[3] + 2))
+    return {"bounds": bounds, "excl": excl, "special": sp}
 
 
 def analyze_pages(doc, lay):
@@ -460,9 +505,14 @@ def build_blocks(doc, lay, pages):
         runs = merged
         if not runs:
             continue
+        spr = [sp["rect"] for sp in lay.get("special", []) if sp["page"] == i]
+
+        def is_special(x0, y0, x1, y1):              # immagini 5-7: gestite a parte
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            return any(a <= cx <= c and b <= cy <= d for a, b, c, d in spr)
         zones = [((y0 - top) / S, (y1 - top) / S)
                  for (x0, y0, x1, y1, w, h) in doc.images(i)
-                 if min(w, h) >= IMG_NOBREAK]
+                 if min(w, h) >= IMG_NOBREAK and not is_special(x0, y0, x1, y1)]
 
         def inzone(r, zones=zones):
             return any(z0 + 1 < r < z1 - 1 for z0, z1 in zones)
@@ -525,15 +575,54 @@ def build_blocks(doc, lay, pages):
     return blocks, X0, X1
 
 
+def bh(b):
+    """Altezza del blocco in pt sorgente (per le immagini speciali: gia' scalata)."""
+    return b["hv"] if b.get("kind") == "img" else b["y1"] - b["y0"]
+
+
+def insert_specials(blocks, special, mode="67"):
+    """Inserisce nel flusso le immagini 5, 6, 7 come blocchi indivisibili:
+    mode '67' -> 5 sola, 6+7 insieme; mode '56' -> 5+6 insieme, 7 sola."""
+    sp = sorted(special, key=lambda s: (s["page"], s["rect"][1]))
+    if not sp:
+        return list(blocks)
+    if len(sp) <= 2:
+        groups = [sp]
+    elif mode == "56":
+        groups = [sp[0:2], [sp[2]]]
+    else:
+        groups = [[sp[0]], sp[1:3]]
+    out = list(blocks)
+    for g in groups:
+        items = [{"page": s["page"], "rect": s["rect"],
+                  "w": s["rect"][2] - s["rect"][0], "h": s["rect"][3] - s["rect"][1]}
+                 for s in g]
+        nb = {"kind": "img", "items": items, "join": "gap", "gap": GAP_REF, "pen": 0.0,
+              "w": max(it["w"] for it in items),
+              "h": sum(it["h"] for it in items) + PAIR_GAP * (len(items) - 1),
+              "page": g[0]["page"], "y0": g[0]["rect"][1], "line": None}
+        pos = len(out)
+        for j, b in enumerate(out):
+            if (b["page"], b["y0"]) > (nb["page"], nb["y0"]):
+                pos = j
+                break
+        out.insert(pos, nb)
+    return out
+
+
 def layout_report(blocks, X0, X1, out_w_mm, out_h_mm, gap_max_pt):
     """Sceglie scala e interruzioni di pagina (programmazione dinamica).
     Ritorna (k, altezza_pagina_in_pt_sorgente, pagine) con pagine = liste di
     indici di blocchi. k = pt di uscita per pt sorgente: e' il vincolo piu'
     limitante tra larghezza e altezza del blocco piu' alto."""
     Wout, Hout = out_w_mm / 25.4 * 72, out_h_mm / 25.4 * 72
-    hmax = max(b["y1"] - b["y0"] for b in blocks)
+    hmax = max([bh(b) for b in blocks if b.get("kind") != "img"] or [1.0])
     k = min(Wout / (X1 - X0), Hout / hmax)
     Hsrc = Hout / k
+    for b in blocks:                      # immagini speciali: stessa scala, ridotte se serve
+        if b.get("kind") == "img":
+            b["s"] = min(1.0, (X1 - X0) / b["w"], Hsrc / b["h"])
+            b["hv"] = b["h"] * b["s"]
     n, INF = len(blocks), 1e18
     f, prv = [INF] * (n + 1), [0] * (n + 1)
     f[0] = 0.0
@@ -545,7 +634,7 @@ def layout_report(blocks, X0, X1, out_w_mm, out_h_mm, gap_max_pt):
             b = blocks[j]
             if j > i:
                 used += min(b["gap"], gap_max_pt)
-            used += b["y1"] - b["y0"]
+            used += bh(b)
             if used > Hsrc + 1e-6:
                 break
             cost = f[i] + PAGE_COST
@@ -577,6 +666,14 @@ def render_report(doc, lay, blocks, pages, X0, X1, k, out_h_mm, gap_max_pt, dpi)
             b = blocks[bi]
             if idx > 0:
                 y += min(b["gap"], gap_max_pt) * z
+            if b.get("kind") == "img":            # immagini 5-7: centrate, stessa scala
+                zs, yy = z * b["s"], y
+                for it in b["items"]:
+                    im = doc.render(it["page"], it["rect"], 72.0 * zs)
+                    canvas.paste(im, (max(0, (Wpx - im.size[0]) // 2), int(round(yy))))
+                    yy += im.size[1] + PAIR_GAP * zs
+                y += b["hv"] * z
+                continue
             if (groups and b["join"] == "grid" and groups[-1]["page"] == b["page"]
                     and abs(groups[-1]["y1"] - b["y0"]) < 1e-6):
                 groups[-1]["y1"] = b["y1"]
@@ -649,13 +746,14 @@ def build_report_tab(root, parent, shared):
     from PIL import Image, ImageTk
 
     st = {"pdf": None, "doc": None, "lay": None, "blocks": None, "X": None,
-          "imgs": [], "k": 1.0, "thumbs": {}, "photos": []}
+          "imgs": [], "k": 1.0, "thumbs": {}, "photos": [], "sel": [], "cbs": []}
     v_w = tk.StringVar(value=f"{OUT_W_MM:g}")
     v_h = tk.StringVar(value=f"{OUT_H_MM:g}")
     v_gap = tk.StringVar(value=f"{GAP_MAX_MM:g}")
     v_dpi = tk.StringVar(value=str(REN_DPI))
     v_brk = tk.BooleanVar(value=False)
     v_zoom = tk.IntVar(value=240)
+    v_pair = tk.StringVar(value="6 + 7")
 
     bar = ttk.Frame(parent, padding=6)
     bar.pack(fill="x")
@@ -688,7 +786,9 @@ def build_report_tab(root, parent, shared):
     # ------------------------------------------------------------- anteprima
     def draw_preview(*_):
         cv.delete("all")
-        st["photos"] = []
+        for w in st["cbs"]:
+            w.destroy()
+        st["cbs"], st["photos"] = [], []
         imgs = st["imgs"]
         if not imgs:
             return
@@ -703,13 +803,16 @@ def build_report_tab(root, parent, shared):
             ph = ImageTk.PhotoImage(st["thumbs"][key])
             st["photos"].append(ph)
             x = 10 + (i % cols) * (tw + 16)
-            y = 10 + (i // cols) * (th + 34)
+            y = 10 + (i // cols) * (th + 58)
             cv.create_rectangle(x - 1, y - 1, x + tw, y + th, outline="#888", fill="white")
             cid = cv.create_image(x, y, image=ph, anchor="nw")
-            cv.create_text(x + tw // 2, y + th + 12, text=f"Pagina {i + 1} / {len(imgs)}")
+            cb = ttk.Checkbutton(cv, text=f"Pagina {i + 1} / {len(imgs)}",
+                                 variable=st["sel"][i])
+            st["cbs"].append(cb)
+            cv.create_window(x + tw // 2, y + th + 6, window=cb, anchor="n")
             cv.tag_bind(cid, "<Double-Button-1>", lambda e, n=i: big(n))
         rows = (len(imgs) + cols - 1) // cols
-        cv.configure(scrollregion=(0, 0, cw, 20 + rows * (th + 34)))
+        cv.configure(scrollregion=(0, 0, cw, 20 + rows * (th + 58)))
 
     def big(n):
         im = st["imgs"][n]
@@ -739,12 +842,16 @@ def build_report_tab(root, parent, shared):
         busy("Impaginazione e rendering in corso...")
         try:
             X0, X1 = st["X"]
-            k, _H, pages = layout_report(st["blocks"], X0, X1, w, h, gap / 25.4 * 72)
-            imgs = render_report(st["doc"], st["lay"], st["blocks"], pages,
+            blocks = insert_specials(st["blocks"], st["lay"].get("special", []),
+                                     "56" if v_pair.get().startswith("5") else "67")
+            k, _H, pages = layout_report(blocks, X0, X1, w, h, gap / 25.4 * 72)
+            imgs = render_report(st["doc"], st["lay"], blocks, pages,
                                  X0, X1, k, h, gap / 25.4 * 72, dpi)
         finally:
             root.config(cursor="")
         st["imgs"], st["k"], st["thumbs"], st["dpi"] = imgs, k, {}, dpi
+        # spunte: tutte attive, tranne le ultime due pagine
+        st["sel"] = [tk.BooleanVar(value=(i < len(imgs) - 2)) for i in range(len(imgs))]
         wmm = imgs[0].size[0] / dpi * 25.4
         hmm = imgs[0].size[1] / dpi * 25.4
         status.config(text=f"{len(imgs)} pagine da {wmm:.0f} × {hmm:.0f} mm  -  "
@@ -773,12 +880,22 @@ def build_report_tab(root, parent, shared):
         if not st["imgs"]:
             messagebox.showinfo("Nessuna pagina", "Apri prima un PDF.")
             return False
+        if not chosen():
+            messagebox.showinfo("Nessuna pagina", "Nessuna pagina spuntata.")
+            return False
         return True
+
+    def chosen():
+        return [im for im, v in zip(st["imgs"], st["sel"]) if v.get()]
+
+    def set_all(val):
+        for v in st["sel"]:
+            v.set(val)
 
     def save_tmp():
         dpi = st["dpi"]
         paths, sizes = [], []
-        for im in st["imgs"]:
+        for im in chosen():
             fd, tmp = tempfile.mkstemp(suffix=".png")
             os.close(fd)
             im.save(tmp, dpi=(dpi, dpi))
@@ -809,9 +926,12 @@ def build_report_tab(root, parent, shared):
             return
         base = os.path.splitext(os.path.basename(st["pdf"]))[0]
         dpi = st["dpi"]
-        for i, im in enumerate(st["imgs"], 1):
-            im.save(os.path.join(d, f"{base}_pag{i:02d}.png"), dpi=(dpi, dpi))
-        status.config(text=f"Salvate {len(st['imgs'])} pagine in {d}")
+        nsel = 0
+        for i, (im, v) in enumerate(zip(st["imgs"], st["sel"]), 1):
+            if v.get():
+                im.save(os.path.join(d, f"{base}_pag{i:02d}.png"), dpi=(dpi, dpi))
+                nsel += 1
+        status.config(text=f"Salvate {nsel} pagine in {d}")
 
     ttk.Button(bar, text="Apri PDF", command=load).pack(side="left")
     lbl.pack(side="left", padx=10)
@@ -827,6 +947,13 @@ def build_report_tab(root, parent, shared):
     ttk.Checkbutton(opt, text="Interruzione di pagina tra le immagini",
                     variable=v_brk).pack(side="left", padx=(0, 12))
     ttk.Button(opt, text="Ricalcola", command=relayout).pack(side="left")
+    ttk.Label(opt, text="Immagini accoppiate").pack(side="left", padx=(20, 3))
+    cbp = ttk.Combobox(opt, textvariable=v_pair, values=("6 + 7", "5 + 6"), width=6,
+                       state="readonly")
+    cbp.pack(side="left")
+    cbp.bind("<<ComboboxSelected>>", relayout)
+    ttk.Button(opt, text="Seleziona tutte", command=lambda: set_all(True)).pack(side="left", padx=(20, 3))
+    ttk.Button(opt, text="Deseleziona tutte", command=lambda: set_all(False)).pack(side="left")
     ttk.Label(opt, text="Anteprima").pack(side="left", padx=(20, 3))
     tk.Scale(opt, variable=v_zoom, from_=120, to=520, orient="horizontal", showvalue=False,
              length=140, command=lambda _v: draw_preview()).pack(side="left")

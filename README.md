@@ -21,8 +21,8 @@ Le due schermate si dividono il lavoro: la 2 **non include** le prime 4 immagini
 2. **Reimpaginazione**: gli spazi vuoti a fondo pagina e tra i capitoli vengono tolti (spazio massimo regolabile) e il contenuto viene ridistribuito in pagine tutte identiche.
 3. **Scala**: il contenuto è ridotto per stare in **max 170 mm di larghezza × 240 mm di altezza**, vale il vincolo più limitante (larghezza del riquadro oppure altezza del blocco indivisibile più alto, es. un'immagine).
 4. **Paragrafi interi**: i tagli di pagina cadono, se possibile, tra un capitolo e l'altro. Immagini, righe di testo e righe di tabella non vengono mai spezzate; una tabella lunga viene tagliata solo tra due righe e l'intestazione ripetuta dal PDF a ogni cambio pagina viene tolta dove la tabella prosegue.
-5. **Anteprima** delle pagine (doppio click per ingrandire) e pulsante **Inserisci in Word (cursore)**: le pagine vengono inserite una dopo l'altra, a misura reale in mm, con interruzione di pagina tra l'una e l'altra (disattivabile).
-   È possibile anche **Salvare le pagine in PNG**.
+5. **Immagini 5, 6, 7** (in ordine di apparizione dopo le 4 viste): ritagliate con bounding box esatta sul contenuto, didascalia sottostante inclusa, centrate in pagina. Sono blocchi indivisibili: **6 + 7** stanno sempre insieme (una sopra l'altra, stessa scala, ridotte se serve per entrare in 170 × 240 mm) e la 5 va da sola; con **Immagini accoppiate = 5 + 6** si accoppiano invece la 5 e la 6. Il testo compreso tra le immagini accoppiate viene collocato dopo la coppia.
+6. **Anteprima** delle pagine (doppio click per ingrandire), con una **spunta sotto ogni pagina** (tutte attive, tranne le ultime due) e i pulsanti **Seleziona tutte / Deseleziona tutte**. **Inserisci in Word (cursore)** e **Salva pagine PNG** operano solo sulle pagine spuntate: in Word vengono inserite una dopo l'altra, a misura reale in mm, con interruzione di pagina tra l'una e l'altra (disattivabile).
 
 Parametri modificabili (poi *Ricalcola* o Invio): larghezza max, altezza max, spazio tra blocchi, risoluzione (dpi).
 
