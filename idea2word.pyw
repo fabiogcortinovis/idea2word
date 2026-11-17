@@ -654,7 +654,7 @@ def build_report_tab(root, parent, shared):
     v_h = tk.StringVar(value=f"{OUT_H_MM:g}")
     v_gap = tk.StringVar(value=f"{GAP_MAX_MM:g}")
     v_dpi = tk.StringVar(value=str(REN_DPI))
-    v_brk = tk.BooleanVar(value=True)
+    v_brk = tk.BooleanVar(value=False)
     v_zoom = tk.IntVar(value=240)
 
     bar = ttk.Frame(parent, padding=6)
@@ -858,8 +858,8 @@ def run_gui():
     nb.pack(fill="both", expand=True)
     tab1 = ttk.Frame(nb)
     tab2 = ttk.Frame(nb)
-    nb.add(tab1, text="  1 · Viste ortogonali  ")
-    nb.add(tab2, text="  2 · Relazione (pagine)  ")
+    nb.add(tab1, text="Proiezioni ortogonali")
+    nb.add(tab2, text="Relazione")
 
     st = {"pdf": None, "imgs": None, "photo": None, "job": None, "comp": None}
     scale_v = {k: tk.DoubleVar(value=1.0) for k in KEYS}
