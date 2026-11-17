@@ -14,7 +14,7 @@ Le due schermate si dividono il lavoro: la 2 **non include** le prime 4 immagini
 - Le ritaglia sul contenuto (niente margini bianchi né didascalie). Il simbolo degli assi viene eliminato se è separato dall'immagine da spazio bianco, mantenuto se la tocca o si sovrappone (es. parti in calcestruzzo grigio chiaro).
 - Le dispone: **3D** in basso a sinistra, **Z** in basso a destra, **Y** in alto a destra, **X** in alto a sinistra.
 - Scale iniziali automatiche (Y di riferimento; X e Z adattate alla sua quota/ascissa), correggibili con slider o con **calibrazione assistita**: si cliccano due punti di distanza nota e si inserisce la misura reale in mm.
-- Esporta in **PNG** oppure inserisce l'immagine in **Word** nella posizione del cursore.
+- Esporta in **PNG** oppure inserisce l'immagine in **Word** nella posizione del cursore, ridimensionata per stare in **max 170 × 240 mm** (vale il vincolo più limitante, proporzioni mantenute).
 
 ## Schermata 2 · Relazione (pagine)
 1. **Ritaglio**: scarta l'intestazione (Progetto / Progetto n / Autore / logo) e il numero di pagina. Il riquadro orizzontale è comune a tutte le pagine (il più largo tra tutte). Si parte da **"Membrature"**; le 4 viste con le loro didascalie sono escluse.

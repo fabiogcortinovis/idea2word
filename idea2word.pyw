@@ -217,8 +217,18 @@ def compose(imgs, scales, offs):
     return canvas
 
 
-def insert_in_word(png_path):
-    """Inserisce l'immagine nel documento Word aperto, alla posizione del cursore."""
+def fit_mm(w_px, h_px, max_w=None, max_h=None):
+    """Dimensione in mm (larghezza, altezza) che entra in max_w x max_h
+    (default 170 x 240) mantenendo le proporzioni: vale il vincolo piu' limitante."""
+    max_w = max_w or OUT_W_MM
+    max_h = max_h or OUT_H_MM
+    s = min(max_w / w_px, max_h / h_px)
+    return w_px * s, h_px * s
+
+
+def insert_in_word(png_path, size_mm=None):
+    """Inserisce l'immagine nel documento Word aperto, alla posizione del cursore.
+    size_mm = (larghezza, altezza) in mm."""
     try:
         import win32com.client
     except ImportError:
@@ -234,23 +244,13 @@ def insert_in_word(png_path):
     sel.Collapse(0)
     shape = sel.InlineShapes.AddPicture(FileName=png_path, LinkToFile=False,
                                         SaveWithDocument=True)
-    # adatta alla larghezza utile: usa la scala in % (piu' robusta di Width)
-    # e non fa fallire l'inserimento se Word rifiuta il ridimensionamento
     try:
         shape.LockAspectRatio = -1          # proporzioni sempre bloccate
+        if size_mm:
+            shape.Width = size_mm[0] / 25.4 * 72
+            shape.Height = size_mm[1] / 25.4 * 72
     except Exception:
-        log_error("Blocco proporzioni non riuscito:\n" + traceback.format_exc())
-    try:
-        ps = word.ActiveDocument.PageSetup
-        usable = float(ps.PageWidth - ps.LeftMargin - ps.RightMargin)
-        width = float(shape.Width)
-        if usable > 50 and width > usable:
-            pct = max(1.0, min(100.0, usable / width * 100.0))
-            shape.ScaleWidth = pct
-            shape.ScaleHeight = pct
-    except Exception:
-        log_error("Ridimensionamento in Word non riuscito:\n"
-                  + traceback.format_exc())
+        log_error("Ridimensionamento in Word non riuscito:\n" + traceback.format_exc())
 
 
 # =============================================================================
@@ -1050,8 +1050,10 @@ def run_gui():
         if not out:
             return
         sc, of = params()
-        compose(st["imgs"], sc, of).save(out, dpi=(150, 150))
-        status.config(text="Salvato: " + out)
+        comp = compose(st["imgs"], sc, of)
+        wmm, hmm = fit_mm(*comp.size)
+        comp.save(out, dpi=(comp.size[0] / wmm * 25.4,) * 2)
+        status.config(text=f"Salvato: {out}  ({wmm:.0f} × {hmm:.0f} mm)")
 
     def to_word():
         if not st["imgs"]:
@@ -1060,9 +1062,12 @@ def run_gui():
         fd, tmp = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            compose(st["imgs"], sc, of).save(tmp, dpi=(150, 150))
-            insert_in_word(tmp)
-            status.config(text="Immagine inserita in Word alla posizione del cursore.")
+            comp = compose(st["imgs"], sc, of)
+            wmm, hmm = fit_mm(*comp.size)
+            comp.save(tmp, dpi=(comp.size[0] / wmm * 25.4,) * 2)
+            insert_in_word(tmp, (wmm, hmm))
+            status.config(text=f"Immagine inserita in Word ({wmm:.0f} × {hmm:.0f} mm) "
+                               "alla posizione del cursore.")
         finally:
             try:
                 os.remove(tmp)
