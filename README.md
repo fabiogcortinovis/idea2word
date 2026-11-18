@@ -4,25 +4,25 @@ Strumento per **IDEA StatiCa Connection** → **Word**. Parte dal PDF di verific
 
 | Schermata | Cosa produce |
 |---|---|
-| **1 · Viste ortogonali** | Un'unica tavola con le quattro viste del nodo in proiezione ortogonale (3D, Z, Y, X) |
-| **2 · Relazione (pagine)** | Le pagine del PDF ritagliate e reimpaginate, tutte dello stesso formato (max 170 × 240 mm), da incollare in Word |
+| **1 · Proiezioni ortogonali** | Un'unica tavola con le quattro viste del nodo in proiezione ortogonale
+| **2 · Relazione** | Le pagine del PDF ritagliate e reimpaginate, tutte dello stesso formato (max 170 × 240 mm), da incollare in Word |
 
 Le due schermate si dividono il lavoro: la 2 **non include** le prime 4 immagini di vista (le gestisce la 1).
 
-## Schermata 1 · Viste ortogonali
+## Schermata 1 · Proiezioni ortogonali
 - Estrae dal PDF le prime 4 immagini di vista, nell'ordine: 3D, Z, Y, X.
 - Le ritaglia sul contenuto (niente margini bianchi né didascalie). Il simbolo degli assi viene eliminato se è separato dall'immagine da spazio bianco, mantenuto se la tocca o si sovrappone (es. parti in calcestruzzo grigio chiaro).
-- Le dispone: **3D** in basso a sinistra, **Z** in basso a destra, **Y** in alto a destra, **X** in alto a sinistra.
+- Le dispone: **3D** in basso a sinistra, **Z** in basso a destra (pianta), **Y** in alto a destra (vista frontale), **X** in alto a sinistra (vista laterale).
 - Scale iniziali automatiche (Y di riferimento; X e Z adattate alla sua quota/ascissa), correggibili con slider o con **calibrazione assistita**: si cliccano due punti di distanza nota e si inserisce la misura reale in mm.
 - Esporta in **PNG** oppure inserisce l'immagine in **Word** nella posizione del cursore, ridimensionata per stare in **max 170 × 240 mm** (vale il vincolo più limitante, proporzioni mantenute).
 
-## Schermata 2 · Relazione (pagine)
+## Schermata 2 · Relazione
 1. **Ritaglio**: scarta l'intestazione (Progetto / Progetto n / Autore / logo) e il numero di pagina. Il riquadro orizzontale è comune a tutte le pagine (il più largo tra tutte). Si parte da **"Membrature"**; le 4 viste con le loro didascalie sono escluse.
 2. **Reimpaginazione**: gli spazi vuoti a fondo pagina e tra i capitoli vengono tolti (spazio massimo regolabile) e il contenuto viene ridistribuito in pagine tutte identiche.
 3. **Scala**: il contenuto è ridotto per stare in **max 170 mm di larghezza × 240 mm di altezza**, vale il vincolo più limitante (larghezza del riquadro oppure altezza del blocco indivisibile più alto, es. un'immagine).
 4. **Paragrafi interi**: i tagli di pagina cadono, se possibile, tra un capitolo e l'altro. Immagini, righe di testo e righe di tabella non vengono mai spezzate; una tabella lunga viene tagliata solo tra due righe e l'intestazione ripetuta dal PDF a ogni cambio pagina viene tolta dove la tabella prosegue.
-5. **Immagini 5, 6, 7** (in ordine di apparizione dopo le 4 viste): ritagliate con bounding box esatta sul contenuto, didascalia sottostante inclusa, centrate in pagina. Sono blocchi indivisibili: **6 + 7** stanno sempre insieme (una sopra l'altra, stessa scala, ridotte se serve per entrare in 170 × 240 mm) e la 5 va da sola; con **Immagini accoppiate = 5 + 6** si accoppiano invece la 5 e la 6. Il testo compreso tra le immagini accoppiate viene collocato dopo la coppia.
-6. **Anteprima** delle pagine (doppio click per ingrandire), con una **spunta sotto ogni pagina** (tutte attive, tranne le ultime due) e i pulsanti **Seleziona tutte / Deseleziona tutte**. **Inserisci in Word (cursore)** e **Salva pagine PNG** operano solo sulle pagine spuntate: in Word vengono inserite una dopo l'altra, a misura reale in mm, con interruzione di pagina tra l'una e l'altra (disattivabile).
+5. **Immagini verifica globale, deformazione, Von Mises** (in ordine di apparizione dopo le 4 viste): ritagliate con bounding box esatta sul contenuto, didascalia sottostante e legenda a lato (es. scala colori) incluse, centrate in pagina. Sono blocchi indivisibili: **Deformazione + Von Mises** (6 + 7) stanno sempre insieme (una sopra l'altra, stessa scala, ridotte se serve per entrare in 170 × 240 mm) e la 5 va da sola (stessa scala di 6 e 7), centrata verticalmente nello spazio libero in fondo alla sua pagina; con **Immagini accoppiate = Globale + Deformazione** si accoppiano invece la 5 e la 6. Il testo compreso tra le immagini accoppiate viene collocato dopo la coppia. Possibile anche mantenere 5 + 6 e 7 separata.
+6. **Anteprima** delle pagine (doppio click per ingrandire), con una **spunta sotto ogni pagina** (tutte attive, tranne le ultime due) e i pulsanti **Seleziona tutte / Deseleziona tutte**. **Inserisci in Word (cursore)** e **Salva pagine PNG** operano solo sulle pagine spuntate: in Word vengono inserite una dopo l'altra, a misura reale in mm.
 
 Parametri modificabili (poi *Ricalcola* o Invio): larghezza max, altezza max, spazio tra blocchi, risoluzione (dpi).
 

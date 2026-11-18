@@ -271,6 +271,7 @@ WASTE_W = 1.0          # peso dello spazio vuoto a fondo pagina
 IMG_NOBREAK = 150      # le immagini raster >= 150 px non vengono mai tagliate
 CAP_GAP = 14.0         # [pt] distanza max tra immagine e didascalia (sotto)
 CAP_NLINES = 2         # righe massime di didascalia incluse nell'immagine
+COMP_GAP = 25.0        # [pt] distanza max per unire una legenda affiancata
 PAIR_GAP = 14.0        # [pt] spazio tra le due immagini accoppiate
 
 
@@ -382,6 +383,20 @@ def trim_rect(doc, page, rect, dpi=150):
             rect[0] + (cols[-1] + 1) * S + 0.5, rect[1] + (rows[-1] + 1) * S + 0.5)
 
 
+def with_companions(doc, page, r, ytop):
+    """Unisce all'immagine le immagini piu' piccole affiancate (es. la legenda
+    colori a destra), escluse quelle nell'intestazione (logo)."""
+    x0, y0, x1, y1 = r
+    for (a, b, c, d, w, h) in doc.images(page):
+        if (a, b, c, d) == tuple(r) or b < ytop:
+            continue
+        ov = min(d, r[3]) - max(b, r[1])
+        near = min(abs(a - r[2]), abs(r[0] - c)) <= COMP_GAP or (a < r[2] and c > r[0])
+        if ov >= 0.5 * min(d - b, r[3] - r[1]) and near and not (a < r[0] - 1 and c > r[2] + 1):
+            x0, y0, x1, y1 = min(x0, a), min(y0, b), max(x1, c), max(y1, d)
+    return (x0, y0, x1, y1)
+
+
 def with_caption(doc, page, r, ybottom):
     """Allunga il rettangolo dell'immagine verso il basso fino a includere la
     didascalia (righe di testo subito sotto, sovrapposte in orizzontale)."""
@@ -448,6 +463,7 @@ def find_report_layout(doc):
         bounds.append((top, bottom))
     sp = []
     for (i, r) in special:
+        r = with_companions(doc, i, r, bounds[i][0])     # legenda a lato
         tr = trim_rect(doc, i, with_caption(doc, i, r, bounds[i][1]))
         sp.append({"page": i, "rect": tr})
         excl.setdefault(i, []).append((tr[0] - 2, tr[1] - 2, tr[2] + 2, tr[3] + 2))
@@ -622,7 +638,11 @@ def layout_report(blocks, X0, X1, out_w_mm, out_h_mm, gap_max_pt):
     for b in blocks:                      # immagini speciali: stessa scala, ridotte se serve
         if b.get("kind") == "img":
             b["s"] = min(1.0, (X1 - X0) / b["w"], Hsrc / b["h"])
-            b["hv"] = b["h"] * b["s"]
+    imgb = [b for b in blocks if b.get("kind") == "img"]
+    if imgb:                              # stessa scala per le immagini 5, 6 e 7
+        smin = min(b["s"] for b in imgb)
+        for b in imgb:
+            b["s"], b["hv"] = smin, b["h"] * smin
     n, INF = len(blocks), 1e18
     f, prv = [INF] * (n + 1), [0] * (n + 1)
     f[0] = 0.0
@@ -650,6 +670,30 @@ def layout_report(blocks, X0, X1, out_w_mm, out_h_mm, gap_max_pt):
     return k, Hsrc, pages
 
 
+def center_solo(canvas, yi, hi):
+    """Immagine singola (5 o 7): sposta lei e cio' che la segue in modo che lo
+    spazio bianco sopra (dal contenuto precedente) e quello in fondo alla pagina
+    siano uguali."""
+    import numpy as np
+    from PIL import Image
+    g = np.array(canvas.convert("L"), dtype=np.uint8)
+    rows = np.flatnonzero((g < NOWHITE).any(axis=1))
+    if not rows.size:
+        return canvas
+    before = rows[rows < yi]
+    above = yi - (before[-1] + 1 if before.size else 0)
+    below = g.shape[0] - 1 - rows[-1]
+    d = int((below - above) // 2)
+    if d <= 0:
+        return canvas
+    W, H = canvas.size
+    strip = canvas.crop((0, yi, W, H - d))
+    out = canvas.copy()
+    out.paste(Image.new("RGB", (W, H - yi), "white"), (0, yi))
+    out.paste(strip, (0, yi + d))
+    return out
+
+
 def render_report(doc, lay, blocks, pages, X0, X1, k, out_h_mm, gap_max_pt, dpi):
     """Disegna le pagine finali (PIL RGB, tutte della stessa dimensione)."""
     from PIL import Image, ImageDraw
@@ -660,7 +704,7 @@ def render_report(doc, lay, blocks, pages, X0, X1, k, out_h_mm, gap_max_pt, dpi)
     for pg in pages:
         canvas = Image.new("RGB", (Wpx, Hpx), "white")
         draw = ImageDraw.Draw(canvas)
-        y = 0.0
+        y, solo = 0.0, None
         groups = []                           # blocchi contigui -> un solo rendering
         for idx, bi in enumerate(pg):
             b = blocks[bi]
@@ -668,10 +712,14 @@ def render_report(doc, lay, blocks, pages, X0, X1, k, out_h_mm, gap_max_pt, dpi)
                 y += min(b["gap"], gap_max_pt) * z
             if b.get("kind") == "img":            # immagini 5-7: centrate, stessa scala
                 zs, yy = z * b["s"], y
+                if len(b["items"]) == 1:
+                    solo = [int(round(yy)), 0]        # per il centraggio finale
                 for it in b["items"]:
                     im = doc.render(it["page"], it["rect"], 72.0 * zs)
                     canvas.paste(im, (max(0, (Wpx - im.size[0]) // 2), int(round(yy))))
                     yy += im.size[1] + PAIR_GAP * zs
+                    if solo:
+                        solo[1] = im.size[1]
                 y += b["hv"] * z
                 continue
             if (groups and b["join"] == "grid" and groups[-1]["page"] == b["page"]
@@ -702,6 +750,8 @@ def render_report(doc, lay, blocks, pages, X0, X1, k, out_h_mm, gap_max_pt, dpi)
             lx0, lx1, gv, th = blocks[nxt]["line"]
             draw.rectangle([(lx0 - X0) * z, y, (lx1 - X0) * z, y + max(1, round(th * z)) - 1],
                            fill=(int(gv),) * 3)
+        if solo and solo[1]:
+            canvas = center_solo(canvas, solo[0], solo[1])
         out.append(canvas)
     return out
 
@@ -753,7 +803,7 @@ def build_report_tab(root, parent, shared):
     v_dpi = tk.StringVar(value=str(REN_DPI))
     v_brk = tk.BooleanVar(value=False)
     v_zoom = tk.IntVar(value=240)
-    v_pair = tk.StringVar(value="6 + 7")
+    v_pair = tk.StringVar(value="Deformazione + Von Mises")
 
     bar = ttk.Frame(parent, padding=6)
     bar.pack(fill="x")
@@ -843,7 +893,7 @@ def build_report_tab(root, parent, shared):
         try:
             X0, X1 = st["X"]
             blocks = insert_specials(st["blocks"], st["lay"].get("special", []),
-                                     "56" if v_pair.get().startswith("5") else "67")
+                                     "56" if v_pair.get().startswith("Globale") else "67")
             k, _H, pages = layout_report(blocks, X0, X1, w, h, gap / 25.4 * 72)
             imgs = render_report(st["doc"], st["lay"], blocks, pages,
                                  X0, X1, k, h, gap / 25.4 * 72, dpi)
@@ -948,7 +998,7 @@ def build_report_tab(root, parent, shared):
                     variable=v_brk).pack(side="left", padx=(0, 12))
     ttk.Button(opt, text="Ricalcola", command=relayout).pack(side="left")
     ttk.Label(opt, text="Immagini accoppiate").pack(side="left", padx=(20, 3))
-    cbp = ttk.Combobox(opt, textvariable=v_pair, values=("6 + 7", "5 + 6"), width=6,
+    cbp = ttk.Combobox(opt, textvariable=v_pair, values=("Deformazione + Von Mises", "Globale + Deformazione"), width=24,
                        state="readonly")
     cbp.pack(side="left")
     cbp.bind("<<ComboboxSelected>>", relayout)
